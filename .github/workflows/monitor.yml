@@ -12,29 +12,30 @@ jobs:
       - name: Check API via proxy
         id: check
         run: |
-          echo "🔍 Checking via proxy..."
+          echo "🔍 Checking Georgian driving exam API..."
           
-          # Using a free CORS proxy to bypass geo-blocking
+          # Try AllOrigins proxy (free, no limits)
           response=$(curl -s --max-time 30 \
-            "https://corsproxy.io/?https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" \
-            2>/dev/null || echo "FAILED")
+            "https://api.allorigins.win/raw?url=https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" \
+            2>/dev/null || echo "[]")
           
           echo "Response: $response"
           
-          if [ "$response" != "FAILED" ] && [ "$response" != "[]" ] && [ "$response" != "" ]; then
-            count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
-            echo "Count: $count"
+          # Check if response is valid JSON array
+          if echo "$response" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            count=$(echo "$response" | jq 'length')
+            echo "Valid array with $count items"
             
             if [ "$count" -gt 0 ]; then
               echo "✅ FOUND $count EXAM DATES!"
               echo "FOUND=true" >> $GITHUB_OUTPUT
               echo "COUNT=$count" >> $GITHUB_OUTPUT
             else
-              echo "⏳ No dates yet"
+              echo "⏳ Array is empty (no dates yet)"
               echo "FOUND=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "⏳ Empty or failed"
+            echo "⚠️ Invalid response (not an array): $response"
             echo "FOUND=false" >> $GITHUB_OUTPUT
           fi
 
@@ -44,13 +45,12 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=🎉 EXAM DATES AVAILABLE!%0A%0AFound: ${{ steps.check.outputs.COUNT }} dates%0ACategory: 4, Center: 15%0A%0ALink: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15%0A%0ABook now! 🚗"
-          echo "📱 Sent!"
 
       - name: Summary
         if: always()
         run: |
           if [ "${{ steps.check.outputs.FOUND }}" == "true" ]; then
-            echo "✅ Found and notified!"
+            echo "✅ Found ${{ steps.check.outputs.COUNT }} dates and notified!"
           else
-            echo "⏳ No dates - checking again in 1 minute"
+            echo "⏳ No dates available - checking again in 1 minute"
           fi
