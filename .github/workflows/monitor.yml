@@ -9,40 +9,51 @@ jobs:
   check-exams:
     runs-on: ubuntu-latest
     steps:
-      - name: Check API for exam dates
-        id: check
-        continue-on-error: true
+      - name: Test API Connection
         run: |
-          echo "🔍 Checking for available exam dates..."
-          response=$(curl -s --max-time 20 --connect-timeout 10 "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" 2>/dev/null || echo "TIMEOUT")
-          if [ "$response" = "TIMEOUT" ]; then
-            echo "⚠️ API timeout - will try again next run"
-            echo "FOUND=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "Response received (first 200 chars):"
-          echo "$response" | head -c 200
+          echo "🔍 Testing API connection..."
+          echo "URL: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15"
           echo ""
-          count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
-          echo "Array length: $count"
-          if [ "$count" -gt 0 ]; then
-            echo "✅ FOUND $count EXAM DATES!"
-            echo "FOUND=true" >> $GITHUB_OUTPUT
-            echo "COUNT=$count" >> $GITHUB_OUTPUT
+          echo "--- Testing with curl verbose mode ---"
+          curl -v --max-time 30 "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" 2>&1 || true
+          echo ""
+          echo "--- Testing with wget ---"
+          wget --timeout=30 -O- "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" 2>&1 || true
+          echo ""
+          echo "--- Testing DNS resolution ---"
+          nslookup api-bookings.sa.gov.ge || true
+          echo ""
+          echo "--- Testing ping ---"
+          ping -c 3 api-bookings.sa.gov.ge || true
+
+      - name: Try Different Approach
+        id: check
+        run: |
+          echo "🔍 Trying with different HTTP client..."
+          response=$(curl -L -s --max-time 30 --connect-timeout 10 \
+            -H "User-Agent: Mozilla/5.0" \
+            -H "Accept: application/json" \
+            "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15" 2>&1 || echo "FAILED")
+          
+          echo "Response: $response"
+          
+          if [ "$response" != "FAILED" ] && [ "$response" != "" ]; then
+            count=$(echo "$response" | jq 'length' 2>/dev/null || echo "0")
+            echo "Count: $count"
+            
+            if [ "$count" -gt 0 ]; then
+              echo "FOUND=true" >> $GITHUB_OUTPUT
+              echo "COUNT=$count" >> $GITHUB_OUTPUT
+            else
+              echo "FOUND=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "⏳ No exam dates available"
             echo "FOUND=false" >> $GITHUB_OUTPUT
           fi
-      - name: Send Telegram notification
+
+      - name: Send Telegram if found
         if: steps.check.outputs.FOUND == 'true'
         run: |
-          curl -s --max-time 10 -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" -d "text=🎉 EXAM DATES AVAILABLE!%0A%0AFound: ${{ steps.check.outputs.COUNT }} dates%0ACategory: 4, Center: 15%0A%0ALink: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15%0A%0ABook now! 🚗"
-          echo "📱 Notification sent!"
-      - name: Summary
-        if: always()
-        run: |
-          if [ "${{ steps.check.outputs.FOUND }}" == "true" ]; then
-            echo "✅ Found ${{ steps.check.outputs.COUNT }} exam dates and notified!"
-          else
-            echo "⏳ No dates or timeout - will retry in 1 minute"
-          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=🎉 EXAM DATES AVAILABLE!%0A%0AFound: ${{ steps.check.outputs.COUNT }} dates%0ACategory: 4, Center: 15%0A%0ABook now!"
