@@ -1,0 +1,63 @@
+name: Driving License Exam Monitor
+
+on:
+  schedule:
+    # Check every 5 minutes
+    - cron: '*/5 * * * *'
+  
+  # Allow manual running
+  workflow_dispatch:
+
+jobs:
+  check-exams:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check API for exam dates
+        id: check
+        run: |
+          echo "🔍 Checking for available exam dates..."
+          
+          # Call the Georgian driving license API
+          response=$(curl -s "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15")
+          
+          echo "Response: $response"
+          
+          # Check if response is not empty array
+          if [ "$response" != "[]" ] && [ "$response" != "" ] && [ "$response" != "null" ]; then
+            echo "✅ EXAM DATES FOUND!"
+            echo "FOUND=true" >> $GITHUB_OUTPUT
+            echo "DATA<<EOF" >> $GITHUB_OUTPUT
+            echo "$response" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "⏳ No exam dates available yet..."
+            echo "FOUND=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Send Telegram notification
+        if: steps.check.outputs.FOUND == 'true'
+        run: |
+          # Format the message
+          message="🎉 *EXAM DATES AVAILABLE!*%0A%0A"
+          message+="Georgian Driving License Practical Exam%0A"
+          message+="Category: 4 | Center: 15%0A%0A"
+          message+="Check here: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15%0A%0A"
+          message+="Raw data:%0A\`\`\`%0A${{ steps.check.outputs.DATA }}%0A\`\`\`"
+          
+          # Send to Telegram
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="$message"
+          
+          echo "📱 Notification sent to Telegram!"
+      
+      - name: Log result
+        run: |
+          if [ "${{ steps.check.outputs.FOUND }}" == "true" ]; then
+            echo "✅ Exam dates found and notification sent!"
+          else
+            echo "⏳ No dates yet, will check again in 5 minutes..."
+          fi
