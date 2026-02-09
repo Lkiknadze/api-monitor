@@ -2,7 +2,7 @@ name: Driving License Exam Monitor
 
 on:
   schedule:
-    # Check every 1 minutes
+    # Check every 1 minute
     - cron: '* * * * *'
   
   # Allow manual running
@@ -19,45 +19,58 @@ jobs:
           echo "🔍 Checking for available exam dates..."
           
           # Call the Georgian driving license API
-          response=$(curl -s "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=2")
+          response=$(curl -s "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15")
           
-          echo "Response: $response"
+          echo "Full response:"
+          echo "$response"
           
-          # Check if response is not empty array
-          if [ "$response" != "[]" ] && [ "$response" != "" ] && [ "$response" != "null" ]; then
-            echo "✅ EXAM DATES FOUND!"
+          # Count array length using jq (JSON processor)
+          count=$(echo "$response" | jq '. | length' 2>/dev/null || echo "0")
+          
+          echo "Array length: $count"
+          
+          # Check if we have data
+          if [ "$count" -gt 0 ]; then
+            echo "✅ FOUND $count EXAM DATES!"
             echo "FOUND=true" >> $GITHUB_OUTPUT
-            echo "DATA<<EOF" >> $GITHUB_OUTPUT
-            echo "$response" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "COUNT=$count" >> $GITHUB_OUTPUT
+            
+            # Save the data
+            {
+              echo "DATA<<EOF"
+              echo "$response" | jq '.' 2>/dev/null || echo "$response"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
           else
-            echo "⏳ No exam dates available yet..."
+            echo "⏳ No exam dates available (array is empty or invalid)"
             echo "FOUND=false" >> $GITHUB_OUTPUT
           fi
       
       - name: Send Telegram notification
         if: steps.check.outputs.FOUND == 'true'
         run: |
-          # Format the message
-          message="🎉 *EXAM DATES AVAILABLE!*%0A%0A"
-          message+="Georgian Driving License Practical Exam%0A"
-          message+="Category: 4 | Center: 15%0A%0A"
-          message+="Check here: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=2"
-          message+="Raw data:%0A\`\`\`%0A${{ steps.check.outputs.DATA }}%0A\`\`\`"
-          
-          # Send to Telegram
+          # Create message
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d parse_mode="Markdown" \
-            -d text="$message"
+            -d parse_mode="HTML" \
+            -d text="<b>🎉 EXAM DATES AVAILABLE!</b>
+
+<b>Found:</b> ${{ steps.check.outputs.COUNT }} available dates
+<b>Category:</b> 4
+<b>Center:</b> 15
+
+<b>Link:</b>
+https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15
+
+Check the link above to book your exam! 🚗"
           
-          echo "📱 Notification sent to Telegram!"
+          echo "📱 Telegram notification sent!"
       
-      - name: Log result
+      - name: Summary
         run: |
           if [ "${{ steps.check.outputs.FOUND }}" == "true" ]; then
-            echo "✅ Exam dates found and notification sent!"
+            echo "✅ SUCCESS: Found ${{ steps.check.outputs.COUNT }} exam dates and sent notification!"
           else
-            echo "⏳ No dates yet, will check again in 5 minutes..."
+            echo "⏳ No dates available yet. Will check again in 1 minute..."
           fi
