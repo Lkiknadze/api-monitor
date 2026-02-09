@@ -19,7 +19,7 @@ jobs:
           echo "🔍 Checking for available exam dates..."
           
           # Call the Georgian driving license API
-          response=$(curl -s "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15")
+          response=$(curl -s "https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=2")
           
           echo "Response: $response"
           
@@ -42,7 +42,7 @@ jobs:
           message="🎉 *EXAM DATES AVAILABLE!*%0A%0A"
           message+="Georgian Driving License Practical Exam%0A"
           message+="Category: 4 | Center: 15%0A%0A"
-          message+="Check here: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=15%0A%0A"
+          message+="Check here: https://api-bookings.sa.gov.ge/api/v1/DrivingLicensePracticalExams2/DrivingLicenseExamsDates2?CategoryCode=4&CenterId=2"
           message+="Raw data:%0A\`\`\`%0A${{ steps.check.outputs.DATA }}%0A\`\`\`"
           
           # Send to Telegram
